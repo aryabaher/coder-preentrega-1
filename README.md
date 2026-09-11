@@ -4,15 +4,22 @@ Cliente asíncrono en **Python 3.12** con interfaz común para **OpenAI**, **Ant
 
 ## Cómo ejecutarlo
 
-1. Entorno virtual e instalación (`openai`, `anthropic`, `google-genai`, `pydantic`, `python-dotenv`):
+Usá el bloque de **Windows (PowerShell)** o el de **Linux/macOS (bash/zsh)** según tu sistema. Los pasos 3 y 4 son los mismos en ambos, una vez activado el venv.
+
+1. Entorno virtual e instalación (`openai`, `anthropic`, `google-genai`, `pydantic`, `python-dotenv`).
+
+**Windows (PowerShell):**
 
 ```powershell
 py -3.12 -m venv .venv
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 ```
 
-En Linux/macOS:
+Si PowerShell bloquea `Activate.ps1`, el `Set-ExecutionPolicy` de arriba vale solo para esa sesión. Alternativa sin activar: `.\.venv\Scripts\python.exe -m pip install -r requirements.txt` y después `.\.venv\Scripts\python.exe main.py`.
+
+**Linux/macOS (bash/zsh):**
 
 ```bash
 python3.12 -m venv .venv
@@ -22,11 +29,13 @@ pip install -r requirements.txt
 
 2. Variables de entorno: copiá `.env.example` a `.env` y completá las keys.
 
+**Windows (PowerShell):**
+
 ```powershell
 copy .env.example .env
 ```
 
-En Linux/macOS:
+**Linux/macOS (bash/zsh):**
 
 ```bash
 cp .env.example .env
@@ -34,7 +43,7 @@ cp .env.example .env
 
 3. Script de prueba (`main.py`): pregunta *¿Qué es la entropía?*, muestra la respuesta completa en texto plano extraída de `ModelResponse` y luego los tokens en tiempo real mediante streaming. También prueba una key inválida a propósito.
 
-Los comandos son universales (PowerShell y bash/zsh):
+**Windows (PowerShell) y Linux/macOS (bash/zsh)** — el comando es el mismo:
 
 ```
 python main.py
@@ -43,7 +52,9 @@ python main.py --provider anthropic
 python main.py --provider gemini
 ```
 
-4. Chequeo offline (sin API key). También es universal:
+4. Chequeo offline (sin API key).
+
+**Windows (PowerShell) y Linux/macOS (bash/zsh)** — el comando es el mismo:
 
 ```
 python validacion.py
@@ -92,9 +103,9 @@ No commitees `.env`. El repo solo versiona `.env.example`.
 
 | Archivo | Qué demuestra |
 |---------|---------------|
-| `evidencias/01-validacion-offline.txt` | Tres clientes, async/streaming, `LLMConfig`, factory, temperature=5. |
-| `evidencias/02-openai-normal-y-streaming.txt` | `main.py --provider openai`. |
-| `evidencias/03-error-controlado-api-key.txt` | `sk-key-invalida-a-proposito` → error capturado, sin crash. |
+| `evidencias/01-validacion-offline.txt` | Tres clientes, async/streaming, `LLMConfig`, factory por `provider`, temperature=5. |
+| `evidencias/02-openai-normal-y-streaming.txt` | `python main.py --provider openai`: texto plano de `ModelResponse` y tokens en streaming. |
+| `evidencias/03-error-controlado-api-key.txt` | Key inválida → `ModelResponse.error`, sin crash. 429/red/503 se reintentan en código; 401 no. |
 
 ## Checklist de verificación
 

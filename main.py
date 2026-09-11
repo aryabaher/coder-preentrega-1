@@ -23,7 +23,8 @@ def _configure_stdio() -> None:
     logging.getLogger("httpx2").setLevel(logging.WARNING)
     logging.getLogger("openai").setLevel(logging.WARNING)
     logging.getLogger("anthropic").setLevel(logging.WARNING)
-    logging.getLogger("google_genai").setLevel(logging.WARNING)
+    logging.getLogger("google_genai").setLevel(logging.ERROR)
+    logging.getLogger("google.genai").setLevel(logging.ERROR)
 
 
 def _pregunta() -> list[ChatMessage]:

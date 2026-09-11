@@ -1,5 +1,6 @@
 # Comando: python main.py --provider openai
-# SecretStr("sk-key-invalida-a-proposito")
+# Bloque final de main.py: SecretStr("sk-key-invalida-a-proposito")
+# 401 no se reintenta (no es RateLimitError ni error de red). El proceso termina en 0.
 
 === Prueba de resiliencia (API key inválida a propósito) ===
 El programa siguió vivo: sí
