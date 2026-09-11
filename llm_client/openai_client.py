@@ -1,96 +1,80 @@
-"""Cliente OpenAI asíncrono (AsyncOpenAI)."""
+"""OpenAIClient: AsyncOpenAI + await, sin bloquear el event loop."""
 
 from __future__ import annotations
 
-import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 
-from openai import (
-    APIConnectionError,
-    APITimeoutError,
-    AsyncOpenAI,
-    AuthenticationError,
-    RateLimitError,
-)
+from openai import APIConnectionError, APIError, APITimeoutError, AsyncOpenAI, RateLimitError
 
-from llm_client.base import BaseLLMClient, as_client_error, close_quietly, failed_response, retry_async
-from llm_client.errors import LLMClientError
-from llm_client.schemas import ChatMessage, ModelConfig, ModelResponse, TokenUsage
+from llm_client.base import BaseLLMClient, close_quietly, retry_async
+from schemas import ChatMessage, ModelResponse, Provider
 
 _RETRYABLE = (RateLimitError, APIConnectionError, APITimeoutError)
 
 
 class OpenAIClient(BaseLLMClient):
-    provider = "openai"
+    def __init__(self, api_key: str, model: str, temperature: float, max_tokens: int):
+        self._client = AsyncOpenAI(api_key=api_key)
+        self.model = model
+        self.temperature = temperature
+        self.max_tokens = max_tokens
 
-    def __init__(
-        self,
-        api_key: str,
-        *,
-        default_model: str = "gpt-4o-mini",
-        timeout: float = 30.0,
-    ) -> None:
-        if not api_key.strip():
-            raise LLMClientError("Falta OPENAI_API_KEY.")
-        self.default_model = default_model
-        self._client = AsyncOpenAI(api_key=api_key, timeout=timeout)
+    def _payload(self, messages: list[ChatMessage]) -> list[dict]:
+        return [m.model_dump() for m in messages]
 
-    async def generate(
-        self,
-        messages: list[ChatMessage],
-        config: ModelConfig | None = None,
-    ) -> ModelResponse:
-        cfg = config or ModelConfig()
-        model = cfg.model or self.default_model
-        payload = [message.model_dump() for message in messages]
+    async def generate(self, messages: list[ChatMessage]) -> ModelResponse:
+        payload = self._payload(messages)
 
         async def _call():
             return await self._client.chat.completions.create(
-                model=model,
+                model=self.model,
                 messages=payload,
-                temperature=cfg.temperature,
-                max_tokens=cfg.max_tokens,
+                temperature=self.temperature,
+                max_tokens=self.max_tokens,
             )
 
         try:
             response = await retry_async(_call, retryable=_RETRYABLE)
-        except (AuthenticationError, RateLimitError, APIConnectionError, APITimeoutError) as exc:
-            return failed_response(self.provider, model, exc)
-        except Exception as exc:  # noqa: BLE001 — el loop principal no debe caer
-            return failed_response(self.provider, model, exc)
+        except RateLimitError as e:
+            return ModelResponse(
+                provider=Provider.OPENAI,
+                model=self.model,
+                content="",
+                error=f"Límite de cuota excedido: {e}",
+            )
+        except (APIConnectionError, APITimeoutError) as e:
+            return ModelResponse(
+                provider=Provider.OPENAI,
+                model=self.model,
+                content="",
+                error=f"Error de conexión: {e}",
+            )
+        except APIError as e:
+            return ModelResponse(
+                provider=Provider.OPENAI,
+                model=self.model,
+                content="",
+                error=f"Error de la API de OpenAI: {e}",
+            )
 
-        choice = response.choices[0]
-        usage = response.usage
         return ModelResponse(
-            content=choice.message.content or "",
-            model=response.model or model,
-            provider=self.provider,
-            finish_reason=str(choice.finish_reason) if choice.finish_reason else None,
-            usage=TokenUsage(
-                prompt_tokens=usage.prompt_tokens if usage else None,
-                completion_tokens=usage.completion_tokens if usage else None,
-            ),
+            provider=Provider.OPENAI,
+            model=self.model,
+            content=response.choices[0].message.content or "",
         )
 
-    async def generate_stream(
-        self,
-        messages: list[ChatMessage],
-        config: ModelConfig | None = None,
-    ) -> AsyncIterator[str]:
-        cfg = config or ModelConfig()
-        model = cfg.model or self.default_model
-        payload = [message.model_dump() for message in messages]
+    async def generate_stream(self, messages: list[ChatMessage]) -> AsyncGenerator[str, None]:
+        payload = self._payload(messages)
 
         async def _open_stream():
             return await self._client.chat.completions.create(
-                model=model,
+                model=self.model,
                 messages=payload,
-                temperature=cfg.temperature,
-                max_tokens=cfg.max_tokens,
+                temperature=self.temperature,
+                max_tokens=self.max_tokens,
                 stream=True,
             )
 
-        stream = None
         try:
             stream = await retry_async(_open_stream, retryable=_RETRYABLE)
             async for chunk in stream:
@@ -99,15 +83,8 @@ class OpenAIClient(BaseLLMClient):
                 delta = chunk.choices[0].delta.content
                 if delta:
                     yield delta
-        except LLMClientError:
-            raise
-        except Exception as exc:  # noqa: BLE001
-            raise as_client_error(exc) from exc
-        finally:
-            # Sin este cierre el pool HTTP queda a medio athrow (httpcore2 + 3.12).
-            if stream is not None:
-                await close_quietly(stream)
-            await asyncio.sleep(0)
+        except (RateLimitError, APIConnectionError, APITimeoutError, APIError) as e:
+            yield f"\n[Error durante el streaming: {e}]"
 
     async def aclose(self) -> None:
         await close_quietly(self._client)

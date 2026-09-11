@@ -1,10 +1,10 @@
-# Cliente LLM unificado y asíncrono
+# Unified Async LLM Client
 
-Interfaz común en Python 3.12 para llamar a **OpenAI** o **Anthropic** sin bloquear el event loop: generación completa, streaming de tokens y errores de API controlados (key inválida, rate limit, red).
+Cliente asíncrono en **Python 3.12** con interfaz común para **OpenAI**, **Anthropic** y **Gemini**: `generate()`, streaming con `yield`, schemas Pydantic (`ChatMessage`, `LLMConfig`, `ModelResponse`) y errores de API controlados (key inválida, rate limit, red). El negocio no instancia un SDK: usa `AsyncLLMManager`.
 
-## Quick path
+## Cómo ejecutarlo
 
-1. Creá el entorno e instalá dependencias:
+1. Entorno virtual e instalación (`openai`, `anthropic`, `google-genai`, `pydantic`, `python-dotenv`):
 
 ```powershell
 py -3.12 -m venv .venv
@@ -20,57 +20,87 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-2. Copiá las variables de entorno y completá las keys:
+2. Variables de entorno: copiá `.env.example` a `.env` y completá las keys.
 
 ```powershell
 copy .env.example .env
 ```
 
-3. Corré la prueba (pregunta: *¿Qué es la entropía?* en modo normal y streaming):
+En Linux/macOS:
 
-```powershell
-python main.py
-python main.py --provider anthropic
+```bash
+cp .env.example .env
 ```
 
-Deberías ver el proveedor activo, la respuesta completa y luego los mismos tokens llegando de a poco.
+3. Script de prueba (`main.py`): pregunta *¿Qué es la entropía?*, muestra la respuesta completa en texto plano extraída de `ModelResponse` y luego los tokens en tiempo real mediante streaming. También prueba una key inválida a propósito.
+
+Los comandos son universales (PowerShell y bash/zsh):
+
+```
+python main.py
+python main.py --provider openai
+python main.py --provider anthropic
+python main.py --provider gemini
+```
+
+4. Chequeo offline (sin API key). También es universal:
+
+```
+python validacion.py
+```
+
+## Archivos del repositorio
+
+| Artefacto | Dónde está |
+|-----------|------------|
+| `schemas.py` (`Provider`, `ChatMessage` + `field_validator`, `LLMConfig` con `SecretStr`, `ModelResponse`) | `schemas.py` |
+| `BaseLLMClient` con `async def generate()` y `generate_stream()` + `yield` | `llm_client/base.py` |
+| `OpenAIClient` (`AsyncOpenAI` + `await client.chat.completions.create(...)`) | `llm_client/openai_client.py` |
+| `AnthropicClient` (`AsyncAnthropic` + `messages.create` / `messages.stream`) | `llm_client/anthropic_client.py` |
+| `GeminiClient` (`genai.Client(...).aio` + `generate_content` / `generate_content_stream`) | `llm_client/gemini_client.py` |
+| `AsyncLLMManager` factory (`_crear_cliente` según `LLMConfig.provider`) | `llm_client/manager.py` |
+| `.env.example` | `.env.example` |
+| `main.py` (normal + streaming + key inválida) | `main.py` |
+| `requirements.txt` | `openai`, `anthropic`, `google-genai`, `pydantic`, `python-dotenv` |
+
+No commitees `.env`. El repo solo versiona `.env.example`.
+
+## Rúbrica: dónde verificar cada criterio
+
+| Criterio | Cómo se cumple | Evidencia |
+|----------|----------------|-----------|
+| Intercambiabilidad | `OpenAIClient`, `AnthropicClient` y `GeminiClient` heredan `BaseLLMClient`. `AsyncLLMManager._crear_cliente` elige por `Provider`. | `validacion.py` · `evidencias/01-validacion-offline.txt` |
+| Asincronía | Solo SDKs async. `await client.chat.completions.create(...)` / `messages.create` / `aio.models.generate_content`. | Código de los tres clientes |
+| Streaming | `async for` + `yield` en cada `generate_stream()`. El consumidor es idéntico para los tres. | `main.py` · `evidencias/02-openai-normal-y-streaming.txt` |
+| Validación Pydantic | `LLMConfig.temperature` 0–2; `ChatMessage.role` validado. `temperature=5` se detecta **antes** de llamar a la API. | `schemas.py` · `evidencias/01-validacion-offline.txt` |
+| Errores controlados | `RateLimitError` y red se reintentan 3 veces (backoff). Si persisten —o si la key es inválida— `ModelResponse.error` y el proceso sigue vivo. | `evidencias/03-error-controlado-api-key.txt` |
+| Gemini | Tercer proveedor, `GOOGLE_API_KEY`, rol `model` en vez de `assistant`. | `llm_client/gemini_client.py` |
 
 ## Variables de entorno
 
 | Variable | Obligatorio | Para qué |
 |----------|-------------|----------|
-| `LLM_PROVIDER` | No (default `openai`) | `openai` o `anthropic` |
+| `LLM_PROVIDER` | No (default `openai`) | `openai`, `anthropic` o `gemini` |
 | `OPENAI_API_KEY` | Si usás OpenAI | Key de la API |
 | `OPENAI_MODEL` | No (`gpt-4o-mini`) | Modelo OpenAI |
 | `ANTHROPIC_API_KEY` | Si usás Anthropic | Key de la API |
 | `ANTHROPIC_MODEL` | No (`claude-sonnet-4-5`) | Modelo Anthropic |
-| `LLM_TIMEOUT` | No (`30`) | Timeout HTTP en segundos |
+| `GOOGLE_API_KEY` | Si usás Gemini | Key de AI Studio (también acepta `GEMINI_API_KEY`) |
+| `GEMINI_MODEL` | No (`gemini-flash-latest`) | Modelo Gemini |
 
-No commitees el archivo `.env`. El repo solo versiona `.env.example`.
+## Evidencias
 
-## Qué hay en el repo
+| Archivo | Qué demuestra |
+|---------|---------------|
+| `evidencias/01-validacion-offline.txt` | Tres clientes, async/streaming, `LLMConfig`, factory, temperature=5. |
+| `evidencias/02-openai-normal-y-streaming.txt` | `main.py --provider openai`. |
+| `evidencias/03-error-controlado-api-key.txt` | `sk-key-invalida-a-proposito` → error capturado, sin crash. |
 
-| Archivo | Rol |
-|---------|-----|
-| `llm_client/schemas.py` | Pydantic: `ChatMessage`, `ModelConfig` (temperatura 0–2, `max_tokens`), `ModelResponse` |
-| `llm_client/base.py` | `BaseLLMClient` con `generate()` / `generate_stream()` y reintentos |
-| `llm_client/openai_client.py` | `AsyncOpenAI` + `await client.chat.completions.create(...)` |
-| `llm_client/anthropic_client.py` | `AsyncAnthropic` + `messages.create` / `messages.stream` |
-| `llm_client/manager.py` | `AsyncLLMManager` elige el proveedor según `LLM_PROVIDER` |
-| `main.py` | Script de validación (normal + streaming) |
+## Checklist de verificación
 
-`AsyncLLMManager` y `create_client("openai"|"anthropic")` instancian el mismo contrato, así el resto del código no se ata a un SDK.
-
-## Comportamiento
-
-- **Asíncrono:** solo clientes `AsyncOpenAI` / `AsyncAnthropic`. Nada de llamadas síncronas dentro de `async def`.
-- **Streaming:** `async for` sobre el stream del SDK y `yield` de cada fragmento de texto.
-- **Errores:** rate limit y fallos de red se reintentan (backoff exponencial, 3 intentos). Si persisten —o si la API key es inválida— `generate()` devuelve `ModelResponse.error` y el streaming levanta `LLMClientError`. El `asyncio.run` de `main.py` no se cae.
-- **Temperatura:** `ModelConfig` la valida entre 0 y 2 (rango OpenAI). El SDK de Anthropic 1.3 ya no acepta `temperature` en `messages.create`; Claude usa el default del modelo.
-
-## Checklist
-
-- [ ] El venv es Python 3.12 (`python --version`)
-- [ ] `.env` tiene la key del proveedor que vas a usar
-- [ ] `python main.py` imprime la respuesta completa
-- [ ] La sección *Modo streaming* muestra el texto de a poco, no de un solo golpe
+- [x] Python 3.12 y las deps (`openai`, `anthropic`, `google-genai`, `pydantic`, `python-dotenv`)
+- [x] `schemas.py` en la raíz con `Provider`, `ChatMessage`, `LLMConfig`, `ModelResponse`
+- [x] `AsyncLLMManager` carga el proveedor por `LLMConfig` / `_crear_cliente`
+- [x] `python validacion.py` confirma Pydantic, interfaz común y factory
+- [x] `python main.py` prueba normal, streaming y key inválida
+- [x] Los errores de API no rompen `asyncio.run`

@@ -1,15 +1,15 @@
-"""Cliente base asíncrono y reintentos ante fallos transitorios."""
+"""BaseLLMClient: contrato común. Evita acoplar el negocio a un SDK."""
 
 from __future__ import annotations
 
 import asyncio
 import logging
 from abc import ABC, abstractmethod
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from typing import TypeVar
 
 from llm_client.errors import LLMClientError
-from llm_client.schemas import ChatMessage, ModelConfig, ModelResponse
+from schemas import ChatMessage, ModelResponse, Provider
 
 logger = logging.getLogger(__name__)
 
@@ -20,30 +20,21 @@ BASE_DELAY_SECONDS = 1.0
 
 
 class BaseLLMClient(ABC):
-    """Interfaz común: generación completa y streaming de tokens."""
-
-    provider: str
-    default_model: str
+    """Contrato que todo cliente de LLM debe cumplir, sin importar el proveedor."""
 
     @abstractmethod
-    async def generate(
-        self,
-        messages: list[ChatMessage],
-        config: ModelConfig | None = None,
-    ) -> ModelResponse:
-        """Devuelve la respuesta completa. Nunca deja escapar excepciones de la API."""
+    async def generate(self, messages: list[ChatMessage]) -> ModelResponse:
+        """Genera una respuesta completa (modo normal, no streaming)."""
+        raise NotImplementedError
 
     @abstractmethod
-    def generate_stream(
-        self,
-        messages: list[ChatMessage],
-        config: ModelConfig | None = None,
-    ) -> AsyncIterator[str]:
-        """Generador asíncrono de fragmentos de texto (`async for` + `yield`)."""
+    async def generate_stream(self, messages: list[ChatMessage]) -> AsyncGenerator[str, None]:
+        """Genera la respuesta token a token (modo streaming)."""
+        raise NotImplementedError
+        yield  # nunca se ejecuta; solo le indica a Python que este método es un generador
 
-    @abstractmethod
     async def aclose(self) -> None:
-        """Cierra el HTTP client del SDK."""
+        return None
 
     async def __aenter__(self) -> BaseLLMClient:
         return self
@@ -99,14 +90,10 @@ async def retry_async(
     raise last_exc
 
 
-def failed_response(provider: str, model: str, exc: BaseException) -> ModelResponse:
+def failed_response(provider: Provider, model: str, exc: BaseException) -> ModelResponse:
     """Convierte una excepción de SDK en una respuesta estructurada (sin crash)."""
 
-    return ModelResponse(
-        provider=provider,
-        model=model,
-        error=_describe_error(exc),
-    )
+    return ModelResponse(provider=provider, model=model, content="", error=_describe_error(exc))
 
 
 def _describe_error(exc: BaseException) -> str:
@@ -116,13 +103,13 @@ def _describe_error(exc: BaseException) -> str:
     if "authentication" in lowered or "api key" in lowered or "unauthorized" in lowered:
         return f"API key inválida o ausente ({name}): {text}"
     if "rate" in lowered or "429" in lowered:
-        return f"Límite de tasa agotado tras reintentos ({name}): {text}"
+        return f"Límite de cuota excedido: {exc}"
     if "timeout" in lowered or "connection" in lowered:
-        return f"Error de red o timeout tras reintentos ({name}): {text}"
-    return f"Error del proveedor ({name}): {text}"
+        return f"Error de conexión: {exc}"
+    return f"Error de la API: {exc}"
 
 
 def as_client_error(exc: BaseException) -> LLMClientError:
     message = _describe_error(exc)
-    retryable = "rate" in message.lower() or "red" in message.lower() or "timeout" in message.lower()
+    retryable = "cuota" in message.lower() or "conexión" in message.lower() or "timeout" in message.lower()
     return LLMClientError(message, retryable=retryable)

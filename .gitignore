@@ -28,3 +28,7 @@ dist/
 Thumbs.db
 Desktop.ini
 .DS_Store
+
+# Temporales locales
+_colab_pistas.*
+_extract_colab.py

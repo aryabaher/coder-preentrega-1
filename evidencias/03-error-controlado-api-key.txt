@@ -1,0 +1,6 @@
+# Comando: python main.py --provider openai
+# SecretStr("sk-key-invalida-a-proposito")
+
+=== Prueba de resiliencia (API key inválida a propósito) ===
+El programa siguió vivo: sí
+Error capturado (sin crash): Error de la API de OpenAI: Error code: 401 - Incorrect API key provided (invalid_api_key)
