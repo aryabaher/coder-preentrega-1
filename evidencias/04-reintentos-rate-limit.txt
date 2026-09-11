@@ -1,0 +1,16 @@
+# Comando: python validacion.py
+# Extracto de la sección de reintentos. No llama a la API: simula RateLimitError (429).
+# OpenAI/Anthropic/Gemini.generate envuelven la llamada en retry_async (3 intentos, backoff).
+# 401 (key inválida) NO entra en _RETRYABLE; esa prueba live está en 03-error-controlado-api-key.txt.
+
+=== Reintentos (rate limit / red / 503) ===
+OpenAI generate usa retry_async: True
+Anthropic generate usa retry_async: True
+Gemini generate usa retry_async: True
+WARNING Intento 1/3 falló (429 simulado (llamada 1)). Reintento en 0.1s.
+WARNING Intento 2/3 falló (429 simulado (llamada 2)). Reintento en 0.2s.
+Tras 3 intentos el error se propaga (sin crash): 429 simulado (llamada 3)
+Llamadas realizadas: 3
+WARNING Intento 1/3 falló (429 simulado (llamada 1)). Reintento en 0.1s.
+WARNING Intento 2/3 falló (429 simulado (llamada 2)). Reintento en 0.2s.
+Si el tercero responde: ok tras reintentos (llamadas=3)

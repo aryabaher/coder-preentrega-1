@@ -84,7 +84,7 @@ No commitees `.env`. El repo solo versiona `.env.example`.
 | Asincronía | Solo SDKs async. `await client.chat.completions.create(...)` / `messages.create` / `aio.models.generate_content`. | Código de los tres clientes |
 | Streaming | `async for` + `yield` en cada `generate_stream()`. El consumidor es idéntico para los tres. | `main.py` · `evidencias/02-openai-normal-y-streaming.txt` |
 | Validación Pydantic | `LLMConfig.temperature` 0–2; `ChatMessage.role` validado. `temperature=5` se detecta **antes** de llamar a la API. | `schemas.py` · `evidencias/01-validacion-offline.txt` |
-| Errores controlados | `RateLimitError` y red se reintentan 3 veces (backoff). Si persisten —o si la key es inválida— `ModelResponse.error` y el proceso sigue vivo. | `evidencias/03-error-controlado-api-key.txt` |
+| Errores controlados | `RateLimitError` y red se reintentan 3 veces (backoff). Si persisten —o si la key es inválida— `ModelResponse.error` y el proceso sigue vivo. | `evidencias/03-error-controlado-api-key.txt` · `evidencias/04-reintentos-rate-limit.txt` |
 | Gemini | Tercer proveedor, `GOOGLE_API_KEY`, rol `model` en vez de `assistant`. | `llm_client/gemini_client.py` |
 
 ## Variables de entorno
@@ -103,15 +103,16 @@ No commitees `.env`. El repo solo versiona `.env.example`.
 
 | Archivo | Qué demuestra |
 |---------|---------------|
-| `evidencias/01-validacion-offline.txt` | Tres clientes, async/streaming, `LLMConfig`, factory por `provider`, temperature=5. |
+| `evidencias/01-validacion-offline.txt` | Tres clientes, async/streaming, `LLMConfig`, factory por `provider`, temperature=5 y reintentos simulados. |
 | `evidencias/02-openai-normal-y-streaming.txt` | `python main.py --provider openai`: texto plano de `ModelResponse` y tokens en streaming. |
-| `evidencias/03-error-controlado-api-key.txt` | Key inválida → `ModelResponse.error`, sin crash. 429/red/503 se reintentan en código; 401 no. |
+| `evidencias/03-error-controlado-api-key.txt` | Key inválida (401) → `ModelResponse.error`, sin crash. El 401 no se reintenta. |
+| `evidencias/04-reintentos-rate-limit.txt` | 429 simulado: 3 intentos con backoff; si persiste se propaga; si el tercero responde, sigue. |
 
 ## Checklist de verificación
 
 - [x] Python 3.12 y las deps (`openai`, `anthropic`, `google-genai`, `pydantic`, `python-dotenv`)
 - [x] `schemas.py` en la raíz con `Provider`, `ChatMessage`, `LLMConfig`, `ModelResponse`
 - [x] `AsyncLLMManager` carga el proveedor por `LLMConfig` / `_crear_cliente`
-- [x] `python validacion.py` confirma Pydantic, interfaz común y factory
+- [x] `python validacion.py` confirma Pydantic, interfaz común, factory y reintentos (429 simulado)
 - [x] `python main.py` prueba normal, streaming y key inválida
 - [x] Los errores de API no rompen `asyncio.run`
