@@ -11,6 +11,7 @@ from pydantic import SecretStr
 
 from llm_client.anthropic_client import AnthropicClient
 from llm_client.base import BaseLLMClient
+from llm_client.errors import LLMClientError
 from llm_client.gemini_client import GeminiClient
 from llm_client.openai_client import OpenAIClient
 from schemas import ChatMessage, LLMConfig, ModelResponse, Provider
@@ -37,7 +38,12 @@ def config_from_env(provider: str | Provider | None = None) -> LLMConfig:
     if isinstance(name, Provider):
         chosen = name
     else:
-        chosen = Provider(str(name).strip().lower())
+        try:
+            chosen = Provider(str(name).strip().lower())
+        except ValueError as exc:
+            raise LLMClientError(
+                f"Proveedor no soportado: {name!r}. Usá openai, anthropic o gemini."
+            ) from exc
 
     def _secret(name: str, *aliases: str) -> SecretStr | None:
         for key in (name, *aliases):
